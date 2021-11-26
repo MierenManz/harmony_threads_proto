@@ -25,22 +25,22 @@ const dropRev4 = iterBenchSync(1e7 / 4, () => a.drop(i -= 4));
 
 console.log("4 byte bench done");
 
-const b = new Allocator(1e7 * 8);
+const b = new Allocator(1e7 * 16);
 
-const alloc32 = iterBenchSync(1e7 / 4, () => b.alloc(32));
-i = -32;
-const drop32 = iterBenchSync(1e7 / 4, () => b.drop(i += 32));
-iterBenchSync(1e7 / 4, () => b.alloc(32));
-i += 32;
-const dropRev32 = iterBenchSync(1e7 / 4, () => b.drop(i -= 32));
+const alloc64 = iterBenchSync(1e7 / 4, () => b.alloc(64));
+i = -64;
+const drop64 = iterBenchSync(1e7 / 4, () => b.drop(i += 64));
+iterBenchSync(1e7 / 4, () => b.alloc(64));
+i += 64;
+const dropRev64 = iterBenchSync(1e7 / 4, () => b.drop(i -= 64));
 
 console.log({
   alloc4: fixBench(alloc4),
   drop4: fixBench(drop4),
-  dropRev4: fixBench(dropRev4),
+  dropReverse4: fixBench(dropRev4),
 });
 console.log({
-  alloc32: fixBench(alloc32),
-  drop32: fixBench(drop32),
-  dropRev32: fixBench(dropRev32),
+  alloc64: fixBench(alloc64),
+  drop64: fixBench(drop64),
+  dropReverse64: fixBench(dropRev64),
 });
