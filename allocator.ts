@@ -36,7 +36,7 @@ export class Allocator {
   }
 
   alloc(size: number): Ptr | null {
-    const alignedSize = (size + 4 - 1) & ~(4 - 1);
+    const alignedSize = (size + this.#blockSize - 1) &~(this.#blockSize - 1);
 
     for (const [ptr, oldBlock] of this.#emptyBlocks) {
       if (oldBlock.size >= alignedSize) {
