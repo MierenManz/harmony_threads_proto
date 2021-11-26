@@ -28,6 +28,7 @@ export class Allocator {
     if (sabOrSize instanceof SharedArrayBuffer) {
       this.#buffer = sabOrSize;
     } else {
+      // deno-fmt-ignore
       const aligned = (sabOrSize + this.#blockSize - 1) &~(this.#blockSize - 1);
       this.#buffer = new SharedArrayBuffer(aligned);
     }
@@ -36,7 +37,7 @@ export class Allocator {
   }
 
   alloc(size: number): Ptr | null {
-    const alignedSize = (size + this.#blockSize - 1) &~(this.#blockSize - 1);
+    const alignedSize = (size + this.#blockSize - 1) & ~(this.#blockSize - 1);
 
     for (const [ptr, oldBlock] of this.#emptyBlocks) {
       if (oldBlock.size >= alignedSize) {
@@ -55,6 +56,7 @@ export class Allocator {
 
     return null;
   }
+
   drop(ptr: Ptr) {
     const baseBlockRef = this.#blocks.get(ptr)!;
     this.#blocks.delete(ptr);
