@@ -1,34 +1,74 @@
 import { Allocator } from "./allocator.ts";
 
-class ThreadPool<T, R> {
-    #sabAllocator: Allocator;
-    #workers: Worker[];
-    #internalWriter: WritableStream<R>;
-    #busy: boolean[];
-    constructor(workerURL: URL, count: number) {
-        this.#workers = [];
-        this.#busy = new Array(count).fill(false);
-        this.#internalWriter = new WritableStream();
-        this.#sabAllocator = new Allocator(1024 ** 2 * count);
-        for (let i = 0; i < count; i++) {
-            const worker = new Worker(workerURL.href, { type: "module", name: `harmony_worker${i}` });
-            worker.onmessage = (evt: MessageEvent<R>) => {
-                this.#busy[i] = false;
-                this.#internalWriter.getWriter().write(evt.data);
-            }
-            this.#workers[i] = worker;
-        }
+const TEXT_ENCODER = new TextEncoder();
+const TEXT_DECODER_STREAM = new TextDecoderStream("", { fatal: false });
+
+export class ThreadPool {
+  #sabAllocator: Allocator;
+  #workers: Worker[];
+  #internalStream: TransformStream<string>;
+  #tasks: number[];
+
+  constructor(workerURL: URL, count: number) {
+    // Set all values
+    this.#workers = [];
+    this.#tasks = new Array(count).fill(0);
+    this.#internalStream = new TransformStream();
+    this.#sabAllocator = new Allocator(1024 ** 2 * count);
+
+    for (let i = 0; i < count; i++) {
+      // Create worker
+      const worker = new Worker(workerURL.href, {
+        type: "module",
+        name: `harmony_worker${i}`,
+      });
+
+      // Event listener to handle response
+      worker.onmessage = (evt: MessageEvent<[number, number]>) => {
+        // Decrease task by done because it is completed
+        this.#tasks[i]--;
+        // Pipe output of text_decoder to internalWriter
+        TEXT_DECODER_STREAM.readable.pipeTo(this.#internalStream.writable);
+        // Decode memory block
+        TEXT_DECODER_STREAM.writable.getWriter().write(
+          new Uint8Array(this.#sabAllocator.buffer, evt.data[0], evt.data[1]),
+        );
+        // Deallocate memory block
+        this.#sabAllocator.drop(evt.data[0]);
+      };
+      worker.postMessage(this.#sabAllocator.buffer);
+      this.#workers[i] = worker;
+    }
+  }
+
+  process(data: string): void {
+    let workerID = 0;
+    let smallest = this.#tasks[0];
+    let worker: Worker = this.#workers[0];
+
+    // Find least busy worker
+    // Start at 1 because 0 is the default
+    for (let i = 1; i < this.#tasks.length; i++) {
+      if (this.#tasks[i] < smallest) {
+        smallest = this.#tasks[i];
+        worker = this.#workers[i];
+      }
     }
 
-    process(data: T): void {
-        for (let i = 0; i < this.#workers.length; i++) {
-            if (this.#busy[i] === false) {
-                // Send ptr and length
-                this.#workers[i].postMessage();
-            }
-        }
-    }
+    // Allocate memory
+    const ptr = this.#sabAllocator.alloc(data.length);
+    // Write into the allocated memory
+    TEXT_ENCODER.encodeInto(
+      data,
+      new Uint8Array(this.#sabAllocator.buffer, ptr!, data.length),
+    );
+    // Add task to worker
+    this.#tasks[workerID]++;
+    // Send ptr and length
+    worker.postMessage([ptr, data.length]);
+  }
 
-    iterator(): void {
-    }
+  [Symbol.asyncIterator](): AsyncIterableIterator<string> {
+    return this.#internalStream.readable[Symbol.asyncIterator]();
+  }
 }
