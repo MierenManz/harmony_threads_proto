@@ -2,5 +2,8 @@
   "deno.suggest.imports.hosts": {
     "https://crux.land": true,
     "https://deno.land": true
-  }
+  },
+  "deno.enable": true,
+  "deno.lint": true,
+  "deno.unstable": true
 }

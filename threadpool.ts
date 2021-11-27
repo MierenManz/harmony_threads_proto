@@ -1,7 +1,7 @@
 import { Allocator } from "./allocator.ts";
 
 const TEXT_ENCODER = new TextEncoder();
-const TEXT_DECODER_STREAM = new TextDecoderStream("", { fatal: false });
+const TEXT_DECODER_STREAM = new TextDecoderStream("utf-8", { fatal: false });
 
 export class ThreadPool {
   #sabAllocator: Allocator;
@@ -21,6 +21,7 @@ export class ThreadPool {
       const worker = new Worker(workerURL.href, {
         type: "module",
         name: `harmony_worker${i}`,
+        deno: true,
       });
 
       // Event listener to handle response
