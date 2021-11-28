@@ -59,10 +59,9 @@ export class ThreadPool {
     // Allocate memory
     const ptr = this.#sabAllocator.alloc(data.length);
     // Write into the allocated memory
-    TEXT_ENCODER.encodeInto(
-      data,
-      new Uint8Array(this.#sabAllocator.buffer, ptr!, data.length),
-    );
+    const slice = new Uint8Array(this.#sabAllocator.buffer, ptr!, data.length);
+    console.log({slice});
+    // TEXT_ENCODER.encodeInto(data, slice);
     // Add task to worker
     this.#tasks[workerID]++;
     // Send ptr and length

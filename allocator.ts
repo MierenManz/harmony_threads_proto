@@ -14,8 +14,8 @@ export class Allocator {
     return this.#blockSize;
   }
 
-  get buffer(): Uint8Array {
-    return new Uint8Array(this.#buffer);
+  get buffer() {
+    return this.#buffer;
   }
 
   constructor(size: number);

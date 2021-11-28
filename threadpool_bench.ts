@@ -29,4 +29,4 @@ const getMessages = async () => {
     }
 }
 const tr = new ThreadPool(new URL("./threadpool_worker.ts", import.meta.url), 10);
-await Promise.all([process, getMessages]);
+await Promise.all([process(), getMessages()]);
