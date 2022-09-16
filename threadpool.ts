@@ -1,74 +1,92 @@
-import { Allocator } from "./allocator.ts";
+interface PoolOptions {
+  sabByteSize: number;
+  workerCount?: number;
+}
 
-const TEXT_ENCODER = new TextEncoder();
-const TEXT_DECODER_STREAM = new TextDecoderStream("utf-8", { fatal: false });
+interface WorkerContext {
+  worker: Worker;
+  dataView: Uint8Array;
+  lengthView: Uint32Array;
+  availabilityView: Uint8Array;
+}
 
-export class ThreadPool {
-  #sabAllocator: Allocator;
-  #workers: Worker[];
-  #internalStream: TransformStream<string>;
-  #tasks: number[];
+export class Threadpool {
+  workers: WorkerContext[];
 
-  constructor(workerURL: URL, count: number) {
-    // Set all values
-    this.#workers = [];
-    this.#tasks = new Array(count).fill(0);
-    this.#internalStream = new TransformStream();
-    this.#sabAllocator = new Allocator(1024 ** 2 * count);
+  constructor(path: string | URL, options: PoolOptions) {
+    if (options.sabByteSize % 4 !== 0) {
+      throw new Error("SAB size should be divisable by 4");
+    }
 
-    for (let i = 0; i < count; i++) {
-      // Create worker
-      const worker = new Worker(workerURL.href, {
+    this.workers = [];
+    this.workers.length = options.workerCount || 4;
+
+    for (let i = 0; i < this.workers.length; i++) {
+      const rawSAB = new SharedArrayBuffer(options.sabByteSize);
+      const lengthView = new Uint32Array(new SharedArrayBuffer(4));
+      const availabilityView = new Uint8Array(new SharedArrayBuffer(1)).fill(1);
+
+      const worker = new Worker(path, {
         type: "module",
-        name: `harmony_worker${i}`,
-        deno: true,
+        name: `Threadpool worker ${i}`,
       });
-
-      // Event listener to handle response
-      worker.onmessage = (evt: MessageEvent<[number, number]>) => {
-        // Decrease task by done because it is completed
-        this.#tasks[i]--;
-        // Pipe output of text_decoder to internalWriter
-        TEXT_DECODER_STREAM.readable.pipeTo(this.#internalStream.writable);
-        // Decode memory block
-        TEXT_DECODER_STREAM.writable.getWriter().write(
-          new Uint8Array(this.#sabAllocator.buffer, evt.data[0], evt.data[1]),
-        );
-        // Deallocate memory block
-        this.#sabAllocator.drop(evt.data[0]);
+      worker.onmessage = () => {
+        worker.postMessage({
+          lengthSAB: lengthView.buffer,
+          dataSAB: rawSAB,
+          availabilitySAB: availabilityView.buffer,
+          id: i,
+        });
       };
-      worker.postMessage(this.#sabAllocator.buffer);
-      this.#workers[i] = worker;
+
+      this.workers[i] = {
+        dataView: new Uint8Array(rawSAB),
+        worker,
+        lengthView,
+        availabilityView,
+      };
     }
   }
 
-  process(data: string): void {
-    let workerID = 0;
-    let smallest = this.#tasks[0];
-    let worker: Worker = this.#workers[0];
-
-    // Find least busy worker
-    // Start at 1 because 0 is the default
-    for (let i = 1; i < this.#tasks.length; i++) {
-      if (this.#tasks[i] < smallest) {
-        smallest = this.#tasks[i];
-        worker = this.#workers[i];
+  terminate() {
+    while (true) {
+      if (this.workers.every((x) => x.availabilityView[0] === 1)) {
+        break;
       }
     }
 
-    // Allocate memory
-    const ptr = this.#sabAllocator.alloc(data.length);
-    // Write into the allocated memory
-    const slice = new Uint8Array(this.#sabAllocator.buffer, ptr!, data.length);
-    console.log({slice});
-    // TEXT_ENCODER.encodeInto(data, slice);
-    // Add task to worker
-    this.#tasks[workerID]++;
-    // Send ptr and length
-    worker.postMessage([ptr, data.length]);
+    this.workers.forEach((x) => {
+      x.worker.postMessage(null);
+      x.worker.terminate();
+    });
   }
 
-  [Symbol.asyncIterator](): AsyncIterableIterator<string> {
-    return this.#internalStream.readable[Symbol.asyncIterator]();
+  async queue(data: Uint8Array) {
+    // Eagerly check for worker that does nothing
+    let maybeWorker = this.workers.find((x) => x.availabilityView[0] === 1);
+    // console.log(maybeWorker);
+    // If worker was found
+    if (maybeWorker) {
+      maybeWorker.lengthView[0] = data.length;
+      maybeWorker.availabilityView[0] = 0;
+      maybeWorker.dataView.set(data);
+    }
+
+    while (true) {
+      maybeWorker = this.workers.find((x) => x.availabilityView[0] === 1);
+      if (maybeWorker) {
+        maybeWorker.lengthView[0] = data.length;
+        maybeWorker.availabilityView[0] = 0;
+        maybeWorker.dataView.set(data);
+        break;
+      }
+
+      await new Promise((res) => setTimeout(res, 10));
+    }
   }
 }
+
+const t = new Threadpool(new URL("./empty.ts", import.meta.url), {
+  sabByteSize: 16,
+  workerCount: 1,
+});
